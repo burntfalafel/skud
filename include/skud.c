@@ -80,6 +80,7 @@ static void print_processes (process_t *processlist)
 
 static int kill_by_id(process_t *processlist, pid_t pid)
 {
+  /*
   process_t *temp = processlist; 
   for (int i=0; i<running_tasks; i++)
   {
@@ -92,5 +93,23 @@ static int kill_by_id(process_t *processlist, pid_t pid)
     }
     temp = temp->next;
   }
+  */
+  kill(pid, SIGKILL); // or SIGTERM? 
   return 1;
 }
+
+static void skud_create_process(char *executable)
+{
+  pid_t pid;
+  pid = fork();
+  printf("ProcessID %d \n", pid);
+
+  kill_by_id(processes, pid);
+  return;
+}
+int main()
+{
+  skud_create_process("ls");
+  return 0;
+}
+// https://github.com/dlekkas/proc_scheduler/blob/master/src/scheduler.c
