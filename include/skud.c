@@ -11,21 +11,8 @@
 
 #include "skud.h"
 
-enum priority 
-{
-  LOW,
-  HIGH
-};
-
-typedef struct process_t
-{
-  struct process_t *next;
-  pid_t task_pid;
-  enum priority rank;
-  char name[20];
-} process_t;
-
 process_t* processes = NULL;
+process_t* curr_proc = NULL;
 int processlistlen;
 int running_tasks;
 
@@ -36,51 +23,96 @@ static void new_process (process_t **processlist, char* processname, pid_t pid, 
   newprocess->rank = pos;
   strcpy(newprocess->name, processname);
   processlistlen++;
-  newprocess->next = NULL;
   if (*processlist==NULL)
   {
+    newprocess->next = newprocess;
     *processlist = newprocess;
     return;
   }
-  while((*processlist)->next!=NULL)
+  process_t *head = *processlist;
+  while((*processlist)->next!=head)
     *processlist=(*processlist)->next;
   (*processlist)->next=newprocess;
+  newprocess->next = head;
   return;
 }
 
-static void remove_process (process_t **processlist, pid_t pid)
+static process_t *remove_process (process_t *head, pid_t pid)
 {
-  process_t *itr = *processlist;
-  while(itr!=NULL)
+  process_t *itr = head;
+  process_t *prev = NULL;
+  while(1)
   {
+    if(!prev)
+      prev = itr;
     if(itr->task_pid == pid)
     {
-      free(itr);
+      //free(itr);
       processlistlen--;
       break;
     }
+    prev=itr;
     itr=itr->next;
+    if(itr == head)
+    {
+      fprintf(stderr, "Couldn't find the PID to remove\n");
+      return NULL;
+    }
   }
-  if(processlistlen==0)
-    *processlist = NULL;
-  return;
+
+
+  // if more than one node, check if first
+  if (itr == head && itr->next != head)
+  {
+    prev = head;
+    while(prev->next != head)
+      prev = prev->next;
+    head = itr->next;
+    prev->next = head;
+    free(itr);
+  }
+  // check if node is last node
+  else if ( itr->next == head && itr == head)
+  {
+    free(itr);
+    head=NULL;
+  }
+  else
+  {
+    prev->next = itr->next;
+    free(itr);
+  }
+  return head;
+}
+
+static process_t *next_curr_process()
+{
+  process_t *temp = curr_proc->next;
+  for (int i = 0; i <= running_tasks; i++){
+		if (temp->rank == HIGH)
+			return temp;
+		temp = temp->next;
+	}
+  return curr_proc->next;
 }
 
 process_t *find_process(process_t *processlist, pid_t pid)
 {
   process_t *itr = processlist;
-  while(itr != NULL)
+  process_t *head = processlist;
+  do
   {
     if(pid==itr->task_pid)
       return itr;
     itr = itr->next;
-  }
+  } while(itr != head);
   return NULL;
 }
 
 static void print_processes (process_t *processlist)
 {
-  while(processlist != NULL)
+  process_t* head = processlist;
+  do
   {
     printf("\nCurrently running %d of %d processes\n", running_tasks, processlistlen);
     if (processlist->rank == LOW)
@@ -88,7 +120,7 @@ static void print_processes (process_t *processlist)
     else if (processlist->rank == HIGH)
       printf("Process ID %d \t | \t Process Name: %s \t | \tPriority: HIGH \t |\n", processlist->task_pid, processlist->name);
     processlist = processlist->next;
-  }
+  } while(processlist != head);
   return;
 }
 
@@ -187,15 +219,31 @@ sigchld_handler(int signum)
 #ifdef DEBUG
     explain_wait_status(pid, status);
 #endif
-    
-
-int main()
-{
-  new_process(&processes, "Hello", 1234, LOW);
-  print_processes(processes);
-  prioritize_process(1234, HIGH);
-  print_processes(processes);
-  remove_process(&processes, 1234);
-  return 0;
+    if (WIFEXITED(status) || WIFSIGNALED(status))
+    {
+      running_tasks--;
+      if((curr_proc->task_pid==pid) && (curr_proc->next->task_pid != curr_proc->task_pid))
+      {
+        remove_process(processes, pid);
+        curr_proc = next_curr_process();
+      }
+      if(curr_proc->next==processes)
+      {
+        remove_process(processes, pid);
+        curr_proc = NULL;
+        printf("All processes terminated! \n");
+        exit(0);
+      }
+    }
+    /* if the process stopped because its available time has ended then
+		 * schedule the next available process in the process list */
+		if (WIFSTOPPED(status))
+			/* current process now becomes the next process in the process list */
+			curr_proc = next_curr_process();
+    /* continue the execution of the process that must be scheduled */
+		kill(curr_proc->rank, SIGCONT);
+		/* set the alarm -> SIGALRM signal will be sent after SHED_TQ_SEC seconds */
+		alarm(SCHED_TQ_SEC);
+  }
 }
 
