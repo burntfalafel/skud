@@ -247,3 +247,72 @@ sigchld_handler(int signum)
   }
 }
 
+/* Disable delivery of SIGALRM and SIGCHLD. */
+static void
+signals_disable(void)
+{
+	sigset_t sigset;
+
+	sigemptyset(&sigset);
+	sigaddset(&sigset, SIGALRM);
+	sigaddset(&sigset, SIGCHLD);
+	if (sigprocmask(SIG_BLOCK, &sigset, NULL) < 0) {
+		perror("signals_disable: sigprocmask");
+		exit(1);
+	}
+}
+
+/* Enable delivery of SIGALRM and SIGCHLD.  */
+static void
+signals_enable(void)
+{
+	sigset_t sigset;
+
+	sigemptyset(&sigset);
+	sigaddset(&sigset, SIGALRM);
+	sigaddset(&sigset, SIGCHLD);
+	if (sigprocmask(SIG_UNBLOCK, &sigset, NULL) < 0) {
+		perror("signals_enable: sigprocmask");
+		exit(1);
+	}
+}
+
+
+/* Install two signal handlers.
+ * One for SIGCHLD, one for SIGALRM.
+ * Make sure both signals are masked when one of them is running.
+ */
+static void
+install_signal_handlers(void)
+{
+	sigset_t sigset;
+	struct sigaction sa;
+
+	sa.sa_handler = sigchld_handler;
+	sa.sa_flags = SA_RESTART;
+	sigemptyset(&sigset);
+	sigaddset(&sigset, SIGCHLD);
+	sigaddset(&sigset, SIGALRM);
+	sa.sa_mask = sigset;
+	if (sigaction(SIGCHLD, &sa, NULL) < 0) {
+		perror("sigaction: sigchld");
+		exit(1);
+	}
+
+	sa.sa_handler = sigalrm_handler;
+	if (sigaction(SIGALRM, &sa, NULL) < 0) {
+		perror("sigaction: sigalrm");
+		exit(1);
+	}
+
+	/*
+	 * Ignore SIGPIPE, so that write()s to pipes
+	 * with no reader do not result in us being killed,
+	 * and write() returns EPIPE instead.
+	 */
+	if (signal(SIGPIPE, SIG_IGN) < 0) {
+		perror("signal: sigpipe");
+		exit(1);
+	}
+}
+
