@@ -10,6 +10,7 @@
 #include <sys/types.h>
 
 #include "skud.h"
+#include "util.h"
 
 process_t* processes = NULL;
 process_t* curr_proc = NULL;
@@ -253,6 +254,7 @@ signals_disable(void)
 {
 	sigset_t sigset;
 
+  /* allow SIGALARAM and SIGCHLD to block proc*/
 	sigemptyset(&sigset);
 	sigaddset(&sigset, SIGALRM);
 	sigaddset(&sigset, SIGCHLD);
@@ -268,6 +270,7 @@ signals_enable(void)
 {
 	sigset_t sigset;
 
+  /* allow SIGALARAM and SIGCHLD to unblocked proc*/
 	sigemptyset(&sigset);
 	sigaddset(&sigset, SIGALRM);
 	sigaddset(&sigset, SIGCHLD);
@@ -316,3 +319,178 @@ install_signal_handlers(void)
 	}
 }
 
+static int shell_request_loop(request_struct *rq)
+{
+  while(1)
+  {
+    signals_disable();
+    switch (rq->c) {
+      case RQ_PRINT_TASK:
+        print_processes(processes);
+        return 0;
+
+      case RQ_KILL_TASK:
+        return kill_by_id(processes, rq->pid);
+
+      case RQ_EXEC_TASK:
+        skud_create_process(rq->executable);
+        return 0;
+
+      case RQ_HIGH_TASK:
+        return prioritize_process(rq->pid, HIGH);
+
+      case RQ_LOW_TASK:
+        return prioritize_process(rq->pid, LOW);
+
+      default:
+        return -ENOSYS;
+    }
+    signals_enable();
+  }
+}
+
+void shell_print_help(void)
+{
+  printf(" ?          : print help\n"
+	       " q          : quit\n"
+	       " p          : print tasks\n"
+	       " k <id>     : kill task identified by id\n"
+	       " e <program>: execute program\n"
+	       " h <id>     : set task identified by id to high priority\n"
+	       " l <id>     : set task identified by id to low priority\n");
+}
+
+void shell_print_loop(char* cmdline, request_struct *rq_tmp)
+{
+    
+    /* if nothing */
+    if (strlen(cmdline) == 0 || strcmp(cmdline, "?") == 0){
+      shell_print_help();
+      return;
+    }
+
+    /* Quit */
+    if (strcmp(cmdline, "q") == 0 || strcmp(cmdline, "Q") == 0) {
+      fprintf(stderr, "Shell: Exiting. Goodbye.\n");
+      exit(0);
+    }
+
+    /* Print Tasks */
+    if (strcmp(cmdline, "p") == 0 || strcmp(cmdline, "P") == 0) {
+      rq_tmp->c = RQ_PRINT_TASK;
+      return;
+    }
+
+    /* Kill Task */
+    if ((cmdline[0] == 'k' || cmdline[0] == 'K') &&
+        cmdline[1] == ' ') {
+      rq_tmp->c = RQ_KILL_TASK;
+      return;
+    }
+
+    /* Exec Task */
+    if ((cmdline[0] == 'e' || cmdline[0] == 'E') && cmdline[1] == ' ') {
+      rq_tmp->c = RQ_EXEC_TASK;
+      return;
+    }
+
+    /* High-prioritize task */
+    if ((cmdline[0] == 'h' || cmdline[0] == 'H') && cmdline[1] == ' ') {
+      rq_tmp->c = RQ_HIGH_TASK;
+      return;
+    }
+
+    /* Low-prioritize task */
+    if ((cmdline[0] == 'l' || cmdline[0] == 'L') && cmdline[1] == ' ') {
+      rq_tmp->c = RQ_LOW_TASK;
+      return;
+    }
+
+    /* Parse error, malformed command, whatever... */
+    printf("command `%s': Bad Command.\n", cmdline);
+    
+}
+
+int main(int argc, char *argv[])
+{
+    /*
+	 * For each of argv[1] to argv[argc - 1],
+	 * create a new child process, add it to the process list.
+	 */
+	 pid_t pid;
+	 for (int i = 1; i < argc; i++){
+		pid = fork();
+	  char executable[TASK_NAME_SZ];
+		if (pid < 0){
+			perror("main: fork");
+			exit(1);
+		}
+		if (pid == 0){
+			/* initialize the required arguments for the execve() function call */
+			strncpy(executable, argv[i], TASK_NAME_SZ);
+			char *newargv[] = { executable, NULL };
+			char *newenviron[] = { NULL };
+
+			/* each process stops itself when created, and the 
+			 * scheduler starts operating when all the processes
+			 * are created and added to the process list */
+			raise(SIGSTOP); // equivalent to kill(getpid(), SIGSTOP);
+
+			execve(executable, newargv, newenviron);
+			/* execve() only returns on error */
+			perror("execve");
+			exit(1);
+		}
+		/* add process to the process list */
+		new_process(&processes, executable, pid, LOW);
+	}	
+	int nproc = argc;  /* number of proccesses goes here */
+
+	/* Wait for all children to raise SIGSTOP before exec()ing. */
+	wait_for_ready_children(nproc);
+
+	/* Install SIGALRM and SIGCHLD handlers. */
+	install_signal_handlers();
+
+    if (nproc == 0) {
+		fprintf(stderr, "Scheduler: No tasks. Exiting...\n");
+		exit(1);
+	}
+
+	/* set the alarm -> SIGALRM signal will be sent after SHED_TQ_SEC seconds */
+	alarm(SCHED_TQ_SEC);
+
+	/* start the execution of the first process in the
+	 * process list by sending a SIGCONT signal because
+	 * all the processes to be scheduled have raised the
+	 * SIGSTOP signal until all the processes to be 
+	 * are created */
+	curr_proc = processes;
+	kill(curr_proc->task_pid, SIGCONT);
+  request_struct *rq_tmp; 
+  rq_tmp->pid = curr_proc->task_pid;
+  char cmdline[SHELL_CMDLINE_SZ];
+  while(1)
+  {
+    printf("skud >> ");
+    fflush(stdout);
+    if (fgets(cmdline, SHELL_CMDLINE_SZ, stdin)==NULL)
+    {
+      fprintf(stderr, "skud: could not read command line, exiting \n");
+      exit(1);
+    }
+    request_struct *rq_tmp;
+    if(cmdline[strlen(cmdline)-1] == "\n")
+      cmdline[strlen(cmdline)-1 ] = '\0';
+    shell_print_loop(cmdline, rq_tmp);
+    shell_request_loop(rq_tmp);
+    
+  }
+
+    while (pause())
+        ;
+
+	return 0;
+
+  return 0;
+}

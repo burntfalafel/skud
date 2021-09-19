@@ -2,6 +2,9 @@
 #define SKUD_H
 
 #define SCHED_TQ_SEC 100
+#define DEBUG 1
+#define TASK_NAME_SZ 100
+#define SHELL_CMDLINE_SZ 100
 
 #include <sys/types.h>
 
@@ -17,6 +20,23 @@ typedef struct process_t
   enum priority rank;
   char name[20];
 } process_t;
+
+enum request_type
+{
+    RQ_PRINT_TASK,
+    RQ_KILL_TASK,
+    RQ_EXEC_TASK,
+    RQ_HIGH_TASK,
+    RQ_LOW_TASK
+};
+
+typedef struct request_struct
+{
+  process_t *proc;
+  pid_t pid;
+  char *executable;
+  enum request_type c;
+} request_struct;
 
 static void new_process(process_t **processlist, char *processname, pid_t pid, enum priority pos);
 
