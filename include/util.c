@@ -53,7 +53,7 @@ wait_for_ready_children(int cnt)
 	pid_t p;
 	int status;
 
-	for (i = 0; i < cnt; i++) {
+	for (i = 1; i < cnt; i++) {
 		/* Wait for any child, also get status for stopped children */
 		p = waitpid(-1, &status, WUNTRACED);
 		explain_wait_status(p, status);
