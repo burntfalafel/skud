@@ -49,4 +49,10 @@ static void print_processes (process_t *processlist);
 
 static int prioritize_process(pid_t pid, enum priority new_priority);
 
+static void signals_disable(void);
+
+static void signals_enable(void);
+
+static void install_signal_handlers(void);
+
 #endif
