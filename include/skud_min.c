@@ -30,23 +30,21 @@ sigalrm_handler(int signum)
 static void
 sigchld_handler(int signum)
 {
-	pid_t pid;
+	pid_t pid_tmp;
 	int status;
 	while(1)
   {
 		/* wait for any child (non-blocking) 
      * https://stackoverflow.com/questions/33508997/waitpid-wnohang-wuntraced-how-do-i-use-these/34845669 
      */
-		pid = waitpid(-1, &status, WUNTRACED | WNOHANG);
-    if (pid<0)
+		pid_tmp = waitpid(-1, &status, WUNTRACED | WNOHANG);
+    if (pid_tmp<0)
     {
       perror("waitpid");
-      exit(pid);
-    } else if (pid==0)
+      exit(pid_tmp);
+    } else if (pid_tmp==0)
       break;
-#ifdef DEBUG
-    explain_wait_status(pid, status);
-#endif
+    explain_wait_status(pid_tmp, status);
     if (WIFEXITED(status) || WIFSIGNALED(status))
     {
         exit(0);
@@ -57,9 +55,7 @@ sigchld_handler(int signum)
 			/* current process now becomes the next process in the process list */
       printf("WIFSTOPPED here\n");
     /* continue the execution of the process that must be scheduled */
-    printf("Hello father\n");
-		kill(pid, SIGCONT);
-    printf("Hello father\n");
+		kill(pid_tmp, SIGCONT);
 		/* set the alarm -> SIGALRM signal will be sent after SHED_TQ_SEC seconds */
 		alarm(12);
   }
@@ -107,16 +103,16 @@ install_signal_handlers(void)
 	sigset_t sigset;
 	struct sigaction sa;
 
-	sa.sa_handler = sigchld_handler;
+	//sa.sa_handler = sigchld_handler;
 	sa.sa_flags = SA_RESTART;
 	sigemptyset(&sigset);
-	sigaddset(&sigset, SIGCHLD);
+	//sigaddset(&sigset, SIGCHLD);
 	sigaddset(&sigset, SIGALRM);
 	sa.sa_mask = sigset;
-	if (sigaction(SIGCHLD, &sa, NULL) < 0) {
-		perror("sigaction: sigchld");
-		exit(1);
-	}
+	//if (sigaction(SIGCHLD, &sa, NULL) < 0) {
+	//	perror("sigaction: sigchld");
+	//	exit(1);
+	//}
 
 	sa.sa_handler = sigalrm_handler;
 	if (sigaction(SIGALRM, &sa, NULL) < 0) {
@@ -200,6 +196,8 @@ printf("pid %d\n", pid);
     sleep(3);
     kill(pid, SIGSTOP);
   sleep(3);
+  kill(savepid, SIGCONT);
+  kill(pid, SIGCONT);
 #endif
   return 0;
 }
