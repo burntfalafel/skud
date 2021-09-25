@@ -18,6 +18,9 @@ process_t* hist_proc = NULL;
 int processlistlen;
 int running_tasks;
 
+ /* A data structure modifying function to create a new process
+  * in circular linked lilst
+  */ 
 static void new_process (process_t **processlist, char* processname, pid_t pid, enum priority pos)
 {
   process_t* newprocess = malloc(sizeof(process_t));
@@ -39,6 +42,9 @@ static void new_process (process_t **processlist, char* processname, pid_t pid, 
   return;
 }
 
+/* A data structure modifying function to remove a process from 
+ * a circular linked list. Returns a pointer to a newly modified linked list.
+ */  
 static process_t *remove_process (process_t *head, pid_t pid)
 {
   process_t *itr = head;
@@ -61,8 +67,6 @@ static process_t *remove_process (process_t *head, pid_t pid)
       return NULL;
     }
   }
-
-
   // if more than one node, check if first
   if (itr == head && itr->next != head)
   {
@@ -87,6 +91,9 @@ static process_t *remove_process (process_t *head, pid_t pid)
   return head;
 }
 
+/* A data structure query function to return a pointer from circular linked list
+ * based on pid argument
+ */
 process_t *find_process(process_t *processlist, pid_t pid)
 {
   process_t *itr = processlist;
@@ -100,6 +107,8 @@ process_t *find_process(process_t *processlist, pid_t pid)
   return NULL;
 }
 
+/* A function to print out all processes' data in the data structure
+ */
 static void print_processes (process_t *processlist)
 {
   if(processlist)
@@ -122,6 +131,10 @@ static void print_processes (process_t *processlist)
   return;
 }
 
+/* A routine function called to check if a (child) process has completed. If 
+ * it hasn't then do not remove from data strucutre. Because of no running of
+ * SIGCHLD handler, this function was written. 
+  */ 
 static process_t*
 check_if_process_busy(process_t *processlist)
 {
@@ -155,6 +168,8 @@ check_if_process_busy(process_t *processlist)
   return head;
 }
 
+/* Clean data structure if user suddenly decides to quit shell (without any exe)
+ */
 static void
 free_processes(process_t *processlist)
 {
@@ -167,26 +182,18 @@ free_processes(process_t *processlist)
   } while (next_proc!=head);
   
 }
+
+/* Send SIGKILL to pid - not needed really. 
+ */
 static int kill_by_id(process_t *processlist, pid_t pid)
 {
-  /*
-  process_t *temp = processlist; 
-  for (int i=0; i<running_tasks; i++)
-  {
-    if(temp->task_pid == pid)
-    {
-      kill(pid, SIGKILL); // or SIGTERM? 
-      // what about failure condition?
-      running_tasks--;
-      return 0;
-    }
-    temp = temp->next;
-  }
-  */
   kill(pid, SIGKILL); // or SIGTERM? 
   return 1;
 }
 
+/* A function to be called inside shell to run an exe. This creates a new process
+ * in data structure along with creating a exe object of it.
+ */
 static void skud_create_process(char *executable)
 {
   pid_t pid;
@@ -215,6 +222,8 @@ static void skud_create_process(char *executable)
   return;
 }
 
+/* Priortize a pid process based on a new priority
+ */
 static int
 prioritize_process(pid_t pid, enum priority new_priority)
 {
@@ -303,6 +312,10 @@ install_signal_handlers(void)
 	}
 }
 
+/* Based on the request from shell_print_loop() and main(), this function links
+ * all skud functions with the shell requests. This has been done to scale skud 
+ * to future products. Compiler should optimize all this overhead really. 
+ */
 static int shell_request_loop(request_struct *rq)
 {
   while(1)
@@ -365,7 +378,9 @@ void shell_print_help(void)
 	       " k <id>     : kill task identified by id\n"
 	       " e <program>: execute program\n"
          " st <id>    : start task identified by id\n"
-         " pa <id>    : pause task identified by id\n"
+         " st         : start the first process in list. Consecutive calls to this traverses through list\n"
+         " ha <id>    : pause task identified by id\n"
+         " ha         : pause the first process running in list. Consecutive calls to this traverses through list\n"
 	       " h <id>     : set task identified by id to high priority\n"
 	       " l <id>     : set task identified by id to low priority\n");
 }
