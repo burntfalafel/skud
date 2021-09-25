@@ -14,6 +14,7 @@
 
 process_t* processes = NULL;
 process_t* curr_proc = NULL;
+process_t* hist_proc = NULL;
 int processlistlen;
 int running_tasks;
 
@@ -86,17 +87,6 @@ static process_t *remove_process (process_t *head, pid_t pid)
   return head;
 }
 
-static process_t *next_curr_process()
-{
-  process_t *temp = curr_proc->next;
-  for (int i = 0; i <= running_tasks; i++){
-		if (temp->rank == HIGH)
-			return temp;
-		temp = temp->next;
-	}
-  return curr_proc->next;
-}
-
 process_t *find_process(process_t *processlist, pid_t pid)
 {
   process_t *itr = processlist;
@@ -112,6 +102,8 @@ process_t *find_process(process_t *processlist, pid_t pid)
 
 static void print_processes (process_t *processlist)
 {
+  if(processlist)
+  {
   process_t* head = processlist;
   do
   {
@@ -122,9 +114,59 @@ static void print_processes (process_t *processlist)
       printf("Process ID %d \t | \t Process Name: %s \t | \tPriority: HIGH \t |\n", processlist->task_pid, processlist->name);
     processlist = processlist->next;
   } while(processlist != head);
+  }
+  else
+  {
+    printf("\nNo more processes left with skud!\n");
+  }
   return;
 }
 
+static process_t*
+check_if_process_busy(process_t *processlist)
+{
+  process_t *head = processlist;
+  int return_wait = 0;
+  int status;
+  do
+  {
+    // printf("Is process terminated? : %d\n", kill(processlist->task_pid, 0));
+    return_wait = waitpid(processlist->task_pid, &status, WNOHANG);
+    if(processlist->task_pid == return_wait)
+    {
+      head = remove_process(head, processlist->task_pid);
+      if(!head)
+        return NULL;
+      processlist = head;
+      running_tasks--;
+    }
+    processlist = processlist->next;
+  } while (processlist!=head);
+  return_wait = waitpid(processlist->task_pid, &status, WNOHANG);  
+  if(processlist==head && processlist->task_pid == return_wait)
+  {
+    head = remove_process(head, processlist->task_pid);
+    if(!head)
+      return NULL;
+    processlist = head;
+    running_tasks--;
+  }
+
+  return head;
+}
+
+static void
+free_processes(process_t *processlist)
+{
+  process_t *head = processlist, *next_proc;
+  do
+  {
+    next_proc = processlist->next;
+    free(processlist);
+    processlist = next_proc;
+  } while (next_proc!=head);
+  
+}
 static int kill_by_id(process_t *processlist, pid_t pid)
 {
   /*
@@ -186,12 +228,6 @@ prioritize_process(pid_t pid, enum priority new_priority)
   return 0;
 }
 
-static void
-sigchld_handler(int signum)
-{
-printf("remove process na \n");
-  processes = remove_process(processes, curr_proc->task_pid);
-}
 /* 
  * SIGALRM handler
  */
@@ -245,18 +281,11 @@ install_signal_handlers(void)
 	sigset_t sigset;
 	struct sigaction sa;
 
-	sa.sa_handler = sigchld_handler;
-  sa.sa_flags = SA_RESTART;
+	sa.sa_flags = SA_RESTART;
 	sigemptyset(&sigset);
 	sigaddset(&sigset, SIGALRM);
-	sigaddset(&sigset, SIGCHLD);
 	sa.sa_mask = sigset;
-  if (sigaction(SIGCHLD, &sa, NULL)<0)
-  {
-    perror("sigaction: sigchld");
-		exit(1);
-  }
-
+  
 	sa.sa_handler = sigalrm_handler;
 	if (sigaction(SIGALRM, &sa, NULL) < 0) {
 		perror("sigaction: sigalrm");
@@ -281,6 +310,12 @@ static int shell_request_loop(request_struct *rq)
     signals_disable();
     switch (rq->c) {
       case RQ_PRINT_TASK:{
+        if(processes)
+        {
+          processes = check_if_process_busy(processes);
+          curr_proc = processes;
+          hist_proc = processes;
+        }
         print_processes(processes);
         return 0;
       }
@@ -297,12 +332,14 @@ static int shell_request_loop(request_struct *rq)
 
       case RQ_START_TASK:{
         // process_t *found = find_process(processes, rq->pid);
-        curr_proc->task_pid = rq->pid;
+        // curr_proc->task_pid = rq->pid;
+        running_tasks++;
         kill(rq->pid, SIGCONT);
         return 0;
       }
 
-      case RQ_PAUSE_TASK:{
+      case RQ_HALT_TASK:{
+        running_tasks--;
         kill(rq->pid, SIGSTOP);
         return 0;
       }
@@ -347,7 +384,8 @@ void shell_print_loop(char* cmdline, request_struct *rq_tmp)
     if (cmdline[0] == 'q' || cmdline[0] == 'Q')  {
       fprintf(stderr, "Shell: Exiting. Goodbye.\n");
       free(rq_tmp);
-      // free_processes(processes);
+      if(processes)
+        free_processes(processes);
       exit(0);
     }
 
@@ -377,8 +415,8 @@ void shell_print_loop(char* cmdline, request_struct *rq_tmp)
       inp_pid = atol(cmdline+3);
       if(!inp_pid)
       {
-        fprintf(stderr, "\n Missing PID argument in start (st <PID>)\n");
-        return;
+        inp_pid = curr_proc->task_pid;
+        curr_proc = curr_proc->next;
       }
       rq_tmp->pid = inp_pid;
       rq_tmp->c = RQ_START_TASK;
@@ -386,17 +424,17 @@ void shell_print_loop(char* cmdline, request_struct *rq_tmp)
     
     }
 
-    if (cmdline[0] == 'p' && cmdline[1] == 'a')
+    if (cmdline[0] == 'h' && cmdline[1] == 'a')
     {
       pid_t inp_pid;
       inp_pid = atol(cmdline+3);
       if(!inp_pid)
       {
-        fprintf(stderr, "\n Missing PID argument in start (pa <PID>)\n");
-        return;
+        inp_pid = hist_proc->task_pid;
+        hist_proc = hist_proc->next;
       }
       rq_tmp->pid = inp_pid;
-      rq_tmp->c = RQ_PAUSE_TASK;
+      rq_tmp->c = RQ_HALT_TASK;
       return;
     }
 
@@ -470,6 +508,7 @@ int main(int argc, char *argv[])
   /* We want to intialize variables before loop
    */
   curr_proc = processes;
+  hist_proc = processes;
 	request_struct *rq_tmp = malloc(sizeof(request_struct)); 
     
   while(1)
@@ -479,7 +518,8 @@ int main(int argc, char *argv[])
     * all the processes to be scheduled have raised the
     * SIGSTOP signal until all the processes to be 
     * are created */
-    rq_tmp->pid = curr_proc->task_pid;
+    if(processes)
+      rq_tmp->pid = processes->task_pid;
     char cmdline[SHELL_CMDLINE_SZ];
     
     printf("skud >> ");
