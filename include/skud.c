@@ -418,7 +418,6 @@ void shell_print_loop(char* cmdline, request_struct *rq_tmp)
 
     /* Exec Task */
     if ((cmdline[0] == 'e' || cmdline[0] == 'E')) {
-      pid_t inp_pid;
       rq_tmp->executable = cmdline+2;
       rq_tmp->c = RQ_EXEC_TASK;
       return;
@@ -549,14 +548,10 @@ int main(int argc, char *argv[])
     
     shell_print_loop(cmdline, rq_tmp);
     shell_request_loop(rq_tmp);
-    rq_tmp->c = NULL;
+    rq_tmp->c = -1;
     
   }
   free(rq_tmp);
-
-    while (pause())
-        ;
-
 	return 0;
 
 }

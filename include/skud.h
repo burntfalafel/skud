@@ -44,9 +44,6 @@ static void new_process(process_t **processlist, char *processname, pid_t pid, e
 
 static process_t *remove_process (process_t *head, pid_t pid);
 
-
-static process_t *next_curr_process();
-
 static void print_processes (process_t *processlist);
 
 static int prioritize_process(pid_t pid, enum priority new_priority);
