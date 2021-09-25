@@ -1,9 +1,9 @@
 # skud : A simple user-space scheduler
 
-A user-space scheduler which provides a shell-interface to control (the start and stop of) each PID you decide to launch with your scheduler. The process datastructure is maintained by a singly circular linked list. 
+User-space scheduler which provides a shell-interface to control (the start and stop of) each PID you decide to launch with your scheduler. The process datastructure is maintained by a singly circular linked list (round-robin fashion). 
 
 ## Working
-The scheduler here is the parent process and triggers child processes through the shell interface. UNIX signal handling is then done to each of the processes to get the desired affect. A SIGALARM handler has also been added to kill the process if it timesout.
+The scheduler here is the parent process and triggers child processes (provided through arguments) through the shell interface. UNIX signal handling is then done to each of the processes to get the desired affect. A SIGALARM handler has also been added to kill the process if it timesout.
 
 ## Usage
 ```
