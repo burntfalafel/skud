@@ -27,7 +27,9 @@ enum request_type
     RQ_KILL_TASK,
     RQ_EXEC_TASK,
     RQ_HIGH_TASK,
-    RQ_LOW_TASK
+    RQ_LOW_TASK,
+    RQ_START_TASK,
+    RQ_HALT_TASK
 };
 
 typedef struct request_struct
